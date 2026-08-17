@@ -43,7 +43,7 @@ function readMatches_() {
   const schedule = getSheetByName_(CONFIG.SCHEDULE_SHEET).getDataRange().getDisplayValues();
   const results = readResultRows_();
   let eventType = 'MD', matches = [];
-  for (let i = 5; i < schedule.length; i++) {
+  for (let i = 0; i < schedule.length; i++) {
     const r = schedule[i];
     if (r[0] && !/^\d+$/.test(String(r[0]).trim())) {
       const heading = String(r[0]).trim();
