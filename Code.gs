@@ -86,7 +86,15 @@ function updateSummary_() {
   const matches = readMatches_().filter(m => m.status === 'finished' || m.status === 'walkover');
   const names = ['รังสีเทคนิค','แพทย์แผนไทย','นวัตกรรมและฉุกเฉินการแพทย์','วทบ.เวชและปวส.เวช'];
   const stats = {}; ['MD','WD','XD'].forEach(type => { stats[type]={}; names.forEach(n => stats[type][n]={matches:0,points:0}); });
-  matches.forEach(m => { const type=m.eventType||'MD', a=m.teamA.name, b=m.teamB.name; if(!stats[type]) return; if(stats[type][a]){stats[type][a].matches++;stats[type][a].points+=m.totalA||0;} if(stats[type][b]){stats[type][b].matches++;stats[type][b].points+=m.totalB||0;} });
+  matches.forEach(m => {
+    const type=m.eventType||'MD', a=m.teamA.name, b=m.teamB.name;
+    if(!stats[type]) return;
+    if(stats[type][a]) stats[type][a].matches++;
+    if(stats[type][b]) stats[type][b].matches++;
+    if (m.winner === 'A') { if(stats[type][a]) stats[type][a].points += 2; }
+    else if (m.winner === 'B') { if(stats[type][b]) stats[type][b].points += 2; }
+    else { if(stats[type][a]) stats[type][a].points += 1; if(stats[type][b]) stats[type][b].points += 1; }
+  });
   const rows = sheet.getDataRange().getDisplayValues();
   let currentType='MD';
   rows.forEach((r,i) => {
