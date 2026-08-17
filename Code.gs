@@ -27,6 +27,7 @@ function doPost(e) {
     checkKey_(body.key);
     if (body.action !== 'save' || !body.match || !body.match.id) throw new Error('ข้อมูลบันทึกไม่ครบ');
     const match = saveMatch_(body.match);
+    updateSummary_();
     return json_({ ok: true, match: match });
   } catch (err) { return json_({ ok: false, error: err.message }); }
 }
@@ -72,6 +73,15 @@ function readResultRows_() { const rows=getResultsSheet_().getDataRange().getDis
 function matchId_(court,pair) { return String(court||'สนาม 1').trim() + '-คู่ที่-' + String(pair||'').trim(); }
 function readResult_(r) { const score=String(r[7]||''); const nums=score.match(/\d+/g)||[]; const a1=Number(nums[0]||0), b1=Number(nums[1]||0), a2=Number(nums[2]||0), b2=Number(nums[3]||0); const sets={set1:{scoreA:a1,scoreB:b1},set2:{scoreA:a2,scoreB:b2}}; return {status:score?'finished':'scheduled',winner:r[8]||null,sets:sets,totalA:a1+a2,totalB:b1+b2,setWinsA:(a1>b1?1:0)+(a2>b2?1:0),setWinsB:(b1>a1?1:0)+(b2>a2?1:0),version:score?1:0,auditLog:[]}; }
 function formatScore_(m) { return [m.sets.set1.scoreA,m.sets.set1.scoreB,m.sets.set2.scoreA,m.sets.set2.scoreB].join('-'); }
+function updateSummary_() {
+  const sheet = getSheetByName_(CONFIG.SUMMARY_SHEET);
+  const matches = readMatches_().filter(m => m.status === 'finished' || m.status === 'walkover');
+  const names = ['รังสีเทคนิค','แพทย์แผนไทย','นวัตกรรมและฉุกเฉินการแพทย์','วทบ.เวชและปวส.เวช'];
+  const stats = {}; names.forEach(n => stats[n] = {matches:0, points:0});
+  matches.forEach(m => { const a=m.teamA.name, b=m.teamB.name; if(stats[a]){stats[a].matches++;stats[a].points+=m.totalA||0;} if(stats[b]){stats[b].matches++;stats[b].points+=m.totalB||0;} });
+  const rows = sheet.getDataRange().getDisplayValues();
+  rows.forEach((r,i) => { const n=String(r[0]||'').trim(); if(stats[n]) sheet.getRange(i+1,2,1,2).setValues([[stats[n].matches,stats[n].points]]); });
+}
 function emptySets_() { return {set1:{scoreA:0,scoreB:0},set2:{scoreA:0,scoreB:0}}; }
 function team_(name) { const n=String(name||'').trim(); const map={'รังสีเทคนิค':'d2','แพทย์แผนไทย':'d1','นวัตกรรมและฉุกเฉินการแพทย์':'d4','นวัตกรรมสื่อสารและฉุกเฉินการแพทย์':'d4','วทบ.เวชและปวส.เวช':'d3','วทบ.เวชและปวส.เวชระเบียน':'d3'}; return {id:n,name:n,departmentId:map[n]||'d3'}; }
 function normalizeDate_(value) { const s=String(value||''); if (/^\d{4}\/\d{1,2}\/\d{1,2}$/.test(s)) return s.replaceAll('/','-'); return s; }
