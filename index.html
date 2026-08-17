@@ -109,6 +109,7 @@
         // ==========================================
         let state = {
             matches: [],
+            isLoading: true,
             currentTab: 'dashboard', // dashboard, schedule, setup
             isJudge: false,
             judgeName: '',
@@ -325,6 +326,7 @@
                     state.matches = generateSeedData();
                     localStorage.setItem('badminton_matches', JSON.stringify(state.matches));
                 }
+                state.isLoading = false;
                 render();
             } else {
                 console.log("🔵 Attempting to connect to Firebase Realtime Database");
@@ -344,11 +346,13 @@
                 const result = await response.json();
                 if (!result.ok) throw new Error(result.error || 'โหลดข้อมูลไม่สำเร็จ');
                 state.matches = result.matches || [];
+                state.isLoading = false;
                 render();
             } catch (error) {
                 console.error(error);
                 showToast('เชื่อมต่อ Google Sheets ไม่สำเร็จ จึงใช้ข้อมูลจำลองชั่วคราว', true);
                 state.matches = generateSeedData();
+                state.isLoading = false;
                 render();
             }
         }
@@ -371,6 +375,7 @@
                         seedData.forEach(m => dataObj[m.id] = m);
                         window.firebaseModules.set(matchesRef, dataObj);
                     }
+                    state.isLoading = false;
                     render();
                 });
             } catch (error) {
@@ -616,6 +621,19 @@
 
         function render() {
             const app = document.getElementById('app');
+            if (state.isLoading) {
+                app.innerHTML = `
+                    <div class="h-full flex flex-col items-center justify-center bg-slate-50 text-slate-700 p-6">
+                        <div class="w-16 h-16 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg mb-5">
+                            <i data-lucide="table-2" class="w-8 h-8"></i>
+                        </div>
+                        <h1 class="text-xl font-bold">กำลังโหลดตารางการแข่งขัน</h1>
+                        <p class="text-sm text-slate-500 mt-2 text-center">กำลังอ่านข้อมูลจาก Google Sheets กรุณารอสักครู่...</p>
+                        <div class="mt-5 w-48 h-1.5 rounded-full bg-slate-200 overflow-hidden"><div class="h-full w-1/2 bg-indigo-600 rounded-full animate-pulse"></div></div>
+                    </div>`;
+                if (window.lucide) lucide.createIcons();
+                return;
+            }
             app.innerHTML = `
                 ${renderHeader()}
                 <div class="flex-1 flex flex-col overflow-hidden relative">
