@@ -615,14 +615,10 @@
             }
 
             const chosenWinner = document.getElementById('winner-choice');
-            if (chosenWinner && chosenWinner.value) {
-                m.winner = chosenWinner.value;
-                m.status = 'finished';
-            }
+            if (chosenWinner && chosenWinner.value) m.status = 'finished';
 
             // 3. Recalculate Logic
             calculateMatchResult(m);
-            if (chosenWinner && chosenWinner.value) m.winner = chosenWinner.value;
 
             // 4. Validate
             const validation = validateCompletedMatch(m);
@@ -1107,7 +1103,7 @@
 
                                 <div class="bg-indigo-50/50 text-indigo-700 text-xs p-3 rounded-lg border border-indigo-100 flex items-start gap-2">
                                     <i data-lucide="info" class="w-4 h-4 shrink-0 mt-0.5 text-indigo-500"></i>
-                                    <span>กติกา: แข่ง 2 เซต เซตละ 21 แต้ม <strong>ไม่มีดิวซ์</strong> ผู้ชนะแมตช์นับจากคะแนนดิบรวม (คลิก "จบแล้ว" เพื่อตรวจสอบความถูกต้อง)</span>
+                                    <span>กติกา: แข่งครบ 2 เกม เกมละ 21 แต้ม ไม่มีเกมที่ 3 แม้ผลเกมเป็น 1–1 ให้รวมคะแนนดิบของทั้งสองเกม (Total Points) ฝ่ายที่รวมได้มากกว่าชนะ</span>
                                 </div>
                             </div>
 
