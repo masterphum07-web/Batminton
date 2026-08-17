@@ -45,9 +45,12 @@ function readMatches_() {
   let eventType = 'MD', matches = [];
   for (let i = 5; i < schedule.length; i++) {
     const r = schedule[i];
-    if (r[0] && !/^\d+$/.test(String(r[0]).trim())) eventType = String(r[0]).includes('ผสม') ? 'XD' : 'MD';
+    if (r[0] && !/^\d+$/.test(String(r[0]).trim())) {
+      const heading = String(r[0]).trim();
+      eventType = heading.includes('ผสม') ? 'XD' : (heading.includes('หญิง') ? 'WD' : 'MD');
+    }
     if (!/^\d+$/.test(String(r[0]).trim())) continue;
-    const court = r[6] || 'สนาม 1';
+    const court = String(r[6] || 'สนาม 1').trim();
     const id = court + '-คู่ที่-' + String(r[0]).trim();
     const saved = results[id] || {};
     matches.push({ id:id, dateISO:normalizeDate_(r[1]), scheduledTime:String(r[5] || '').replace(' น.',''), court:court, eventType:eventType, status:saved.status || 'scheduled', winner:saved.winner || null, teamA:team_(r[2]), teamB:team_(r[4]), sets:saved.sets || emptySets_(), totalA:Number(saved.totalA||0), totalB:Number(saved.totalB||0), setWinsA:Number(saved.setWinsA||0), setWinsB:Number(saved.setWinsB||0), updatedAt:saved.updatedAt||'', updatedBy:saved.updatedBy||'', version:Number(saved.version||0), auditLog:saved.auditLog||[] });
