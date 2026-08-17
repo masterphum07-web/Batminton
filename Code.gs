@@ -63,6 +63,7 @@ function readMatches_() {
 }
 
 function saveMatch_(match) {
+  match = recalculateMatch_(match);
   const sheet = getResultsSheet_();
   const rows = sheet.getDataRange().getDisplayValues();
   const rowIndex = rows.findIndex((r, i) => i > 0 && matchId_(r[6], r[0]) === String(match.id));
@@ -73,6 +74,22 @@ function saveMatch_(match) {
   if (rowIndex <= 0) throw new Error('หาแถวของแมตช์ในแท็บผลการแข่งขันไม่พบ');
   sheet.getRange(rowIndex + 1, 8, 1, 2).setValues([[formatScore_(match), match.winner || '']]);
   return match;
+}
+
+// คำนวณฝั่งเซิร์ฟเวอร์: แข่ง 2 เกม แล้วรวมคะแนนดิบทั้งสองเกม
+function recalculateMatch_(m) {
+  if (!m.sets) m.sets = emptySets_();
+  const a1=Number(m.sets.set1.scoreA||0), b1=Number(m.sets.set1.scoreB||0);
+  const a2=Number(m.sets.set2.scoreA||0), b2=Number(m.sets.set2.scoreB||0);
+  m.totalA=a1+a2; m.totalB=b1+b2;
+  m.setWinsA=(a1>b1?1:0)+(a2>b2?1:0);
+  m.setWinsB=(b1>a1?1:0)+(b2>a2?1:0);
+  if (m.status !== 'walkover') {
+    if (m.totalA > m.totalB) { m.winner='A'; m.status='finished'; }
+    else if (m.totalB > m.totalA) { m.winner='B'; m.status='finished'; }
+    else { m.winner='TIE_PENDING'; m.status='needs_review'; }
+  }
+  return m;
 }
 
 function getSheetByName_(name) { return SpreadsheetApp.openById(CONFIG.SHEET_ID).getSheetByName(name) || SpreadsheetApp.openById(CONFIG.SHEET_ID).insertSheet(name); }
