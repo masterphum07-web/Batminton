@@ -45,9 +45,13 @@ function readMatches_() {
   let eventType = 'MD', matches = [];
   for (let i = 0; i < schedule.length; i++) {
     const r = schedule[i];
+    const rowText = r.join(' ').replace(/\s+/g, ' ').trim();
     if (r[0] && !/^\d+$/.test(String(r[0]).trim())) {
-      const heading = String(r[0]).trim();
-      eventType = heading.includes('ผสม') ? 'XD' : (heading.includes('หญิง') ? 'WD' : 'MD');
+      const heading = rowText;
+      if (heading.includes('หญิง')) eventType = 'WD';
+      else if (heading.includes('ผสม')) eventType = 'XD';
+      else if (heading.includes('ชาย')) eventType = 'MD';
+      else if (heading.includes('สนามแข่ง 2')) eventType = 'WD';
     }
     if (!/^\d+$/.test(String(r[0]).trim())) continue;
     const court = String(r[6] || 'สนาม 1').trim();
