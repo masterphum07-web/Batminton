@@ -4,7 +4,9 @@
  */
 const CONFIG = {
   SHEET_ID: '1hSVQ9e_V5ZelrBaHYZ3ap5Ha0D2CAPEhxvSd9_NvLEg',
-  SHEET_NAME: 'Matches',
+  SCHEDULE_SHEET: 'ตารางการแข่งขัน',
+  RESULTS_SHEET: 'ผลการแข่งขัน',
+  SUMMARY_SHEET: 'สรุปผลการแข่งขัน',
   API_KEY: ''
 };
 
@@ -30,20 +32,29 @@ function doPost(e) {
 }
 
 function setupSheet() {
-  const sheet = getSheet_();
+  const sheet = getResultsSheet_();
   if (sheet.getLastRow() === 0) sheet.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);
   else if (sheet.getRange(1, 1).getValue() !== 'id') sheet.insertRowBefore(1).getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);
 }
 
 function readMatches_() {
-  setupSheet();
-  const values = getSheet_().getDataRange().getValues();
-  return values.slice(1).filter(r => r[0]).map(rowToMatch_);
+  const schedule = getSheetByName_(CONFIG.SCHEDULE_SHEET).getDataRange().getDisplayValues();
+  const results = readResultRows_();
+  let eventType = 'MD', matches = [];
+  for (let i = 5; i < schedule.length; i++) {
+    const r = schedule[i];
+    if (r[0] && !/^\d+$/.test(String(r[0]).trim())) eventType = String(r[0]).includes('ผสม') ? 'XD' : 'MD';
+    if (!/^\d+$/.test(String(r[0]).trim())) continue;
+    const id = 'pair-' + String(r[0]).trim();
+    const saved = results[id] || {};
+    matches.push({ id:id, dateISO:normalizeDate_(r[1]), scheduledTime:String(r[5] || '').replace(' น.',''), court:r[6] || 'สนาม 1', eventType:eventType, status:saved.status || 'scheduled', winner:saved.winner || null, teamA:team_(r[2]), teamB:team_(r[4]), sets:saved.sets || emptySets_(), totalA:Number(saved.totalA||0), totalB:Number(saved.totalB||0), setWinsA:Number(saved.setWinsA||0), setWinsB:Number(saved.setWinsB||0), updatedAt:saved.updatedAt||'', updatedBy:saved.updatedBy||'', version:Number(saved.version||0), auditLog:saved.auditLog||[] });
+  }
+  return matches;
 }
 
 function saveMatch_(match) {
   setupSheet();
-  const sheet = getSheet_();
+  const sheet = getResultsSheet_();
   const rows = sheet.getDataRange().getValues();
   const rowIndex = rows.findIndex((r, i) => i > 0 && String(r[0]) === String(match.id));
   const old = rowIndex > 0 ? rowToMatch_(rows[rowIndex]) : null;
@@ -56,7 +67,12 @@ function saveMatch_(match) {
   return match;
 }
 
-function getSheet_() { return SpreadsheetApp.openById(CONFIG.SHEET_ID).getSheetByName(CONFIG.SHEET_NAME) || SpreadsheetApp.openById(CONFIG.SHEET_ID).insertSheet(CONFIG.SHEET_NAME); }
+function getSheetByName_(name) { return SpreadsheetApp.openById(CONFIG.SHEET_ID).getSheetByName(name) || SpreadsheetApp.openById(CONFIG.SHEET_ID).insertSheet(name); }
+function getResultsSheet_() { return getSheetByName_(CONFIG.RESULTS_SHEET); }
+function readResultRows_() { setupSheet(); const rows=getResultsSheet_().getDataRange().getValues(); const out={}; rows.slice(1).filter(r=>r[0]).forEach(r=>out[r[0]]=rowToMatch_(r)); return out; }
+function emptySets_() { return {set1:{scoreA:0,scoreB:0},set2:{scoreA:0,scoreB:0}}; }
+function team_(name) { const n=String(name||'').trim(); const map={'รังสีเทคนิค':'d2','แพทย์แผนไทย':'d1','นวัตกรรมและฉุกเฉินการแพทย์':'d4','นวัตกรรมสื่อสารและฉุกเฉินการแพทย์':'d4','วทบ.เวชและปวส.เวช':'d3','วทบ.เวชและปวส.เวชระเบียน':'d3'}; return {id:n,name:n,departmentId:map[n]||'d3'}; }
+function normalizeDate_(value) { const s=String(value||''); if (/^\d{4}\/\d{1,2}\/\d{1,2}$/.test(s)) return s.replaceAll('/','-'); return s; }
 function checkKey_(key) { if (CONFIG.API_KEY && key !== CONFIG.API_KEY) throw new Error('API key ไม่ถูกต้อง'); }
 function rowToMatch_(r) { return { id:r[0], dateISO:r[1], scheduledTime:r[2], court:r[3], eventType:r[4], status:r[5], winner:r[6] || null, teamA:JSON.parse(r[7]), teamB:JSON.parse(r[8]), sets:JSON.parse(r[9]), totalA:Number(r[10]||0), totalB:Number(r[11]||0), setWinsA:Number(r[12]||0), setWinsB:Number(r[13]||0), updatedAt:r[14], updatedBy:r[15], version:Number(r[16]||1), auditLog:JSON.parse(r[17] || '[]') }; }
 function matchToRow_(m) { return [m.id,m.dateISO,m.scheduledTime,m.court,m.eventType,m.status,m.winner||'',JSON.stringify(m.teamA),JSON.stringify(m.teamB),JSON.stringify(m.sets),m.totalA||0,m.totalB||0,m.setWinsA||0,m.setWinsB||0,m.updatedAt||'',m.updatedBy||'',m.version||1,JSON.stringify(m.auditLog||[])]; }
