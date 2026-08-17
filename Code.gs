@@ -96,7 +96,7 @@ function getSheetByName_(name) { return SpreadsheetApp.openById(CONFIG.SHEET_ID)
 function getResultsSheet_() { return getSheetByName_(CONFIG.RESULTS_SHEET); }
 function readResultRows_() { const rows=getResultsSheet_().getDataRange().getDisplayValues(); const out={}; rows.slice(1).forEach(r=>{ if (/^\d+$/.test(String(r[0]).trim())) out[matchId_(r[6],r[0])] = readResult_(r); }); return out; }
 function matchId_(court,pair) { return String(court||'สนาม 1').trim() + '-คู่ที่-' + String(pair||'').trim(); }
-function readResult_(r) { const score=String(r[7]||''); const nums=score.match(/\d+/g)||[]; const a1=Number(nums[0]||0), b1=Number(nums[1]||0), a2=Number(nums[2]||0), b2=Number(nums[3]||0); const sets={set1:{scoreA:a1,scoreB:b1},set2:{scoreA:a2,scoreB:b2}}; return {status:score?'finished':'scheduled',winner:r[8]||null,sets:sets,totalA:a1+a2,totalB:b1+b2,setWinsA:(a1>b1?1:0)+(a2>b2?1:0),setWinsB:(b1>a1?1:0)+(b2>a2?1:0),version:score?1:0,auditLog:[]}; }
+function readResult_(r) { const score=String(r[7]||''); const nums=score.match(/\d+/g)||[]; const a1=Number(nums[0]||0), b1=Number(nums[1]||0), a2=Number(nums[2]||0), b2=Number(nums[3]||0); const totalA=a1+a2, totalB=b1+b2; const winner=r[8] || (totalA>totalB?'A':(totalB>totalA?'B':(score?'TIE_PENDING':null))); const sets={set1:{scoreA:a1,scoreB:b1},set2:{scoreA:a2,scoreB:b2}}; return {status:score?'finished':'scheduled',winner:winner,sets:sets,totalA:totalA,totalB:totalB,setWinsA:(a1>b1?1:0)+(a2>b2?1:0),setWinsB:(b1>a1?1:0)+(b2>a2?1:0),version:score?1:0,auditLog:[]}; }
 function formatScore_(m) { return [m.sets.set1.scoreA,m.sets.set1.scoreB,m.sets.set2.scoreA,m.sets.set2.scoreB].join('-'); }
 function updateSummary_() {
   const sheet = getSheetByName_(CONFIG.SUMMARY_SHEET);
