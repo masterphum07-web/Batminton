@@ -1,0 +1,63 @@
+/** Freshy Badminton - Google Apps Script API
+ *  1) วางไฟล์นี้ใน Apps Script ของ Google Sheet
+ *  2) ตั้งค่า SHEET_ID และ API_KEY ให้ตรงกับเว็บ
+ */
+const CONFIG = {
+  SHEET_ID: '1hSVQ9e_V5ZelrBaHYZ3ap5Ha0D2CAPEhxvSd9_NvLEg',
+  SHEET_NAME: 'Matches',
+  API_KEY: ''
+};
+
+const HEADERS = ['id','dateISO','scheduledTime','court','eventType','status','winner','teamA','teamB','sets','totalA','totalB','setWinsA','setWinsB','updatedAt','updatedBy','version','auditLog'];
+
+function doGet(e) {
+  try {
+    checkKey_(e.parameter.key);
+    // เปิด URL ตรงๆ ก็ให้โหลดข้อมูลได้เลย ส่วนเว็บจะส่ง action=list มาอยู่แล้ว
+    if (e.parameter.action && e.parameter.action !== 'list') throw new Error('action ไม่ถูกต้อง');
+    return json_({ ok: true, matches: readMatches_() });
+  } catch (err) { return json_({ ok: false, error: err.message }); }
+}
+
+function doPost(e) {
+  try {
+    const body = JSON.parse(e.postData.contents || '{}');
+    checkKey_(body.key);
+    if (body.action !== 'save' || !body.match || !body.match.id) throw new Error('ข้อมูลบันทึกไม่ครบ');
+    const match = saveMatch_(body.match);
+    return json_({ ok: true, match: match });
+  } catch (err) { return json_({ ok: false, error: err.message }); }
+}
+
+function setupSheet() {
+  const sheet = getSheet_();
+  if (sheet.getLastRow() === 0) sheet.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);
+  else if (sheet.getRange(1, 1).getValue() !== 'id') sheet.insertRowBefore(1).getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);
+}
+
+function readMatches_() {
+  setupSheet();
+  const values = getSheet_().getDataRange().getValues();
+  return values.slice(1).filter(r => r[0]).map(rowToMatch_);
+}
+
+function saveMatch_(match) {
+  setupSheet();
+  const sheet = getSheet_();
+  const rows = sheet.getDataRange().getValues();
+  const rowIndex = rows.findIndex((r, i) => i > 0 && String(r[0]) === String(match.id));
+  const old = rowIndex > 0 ? rowToMatch_(rows[rowIndex]) : null;
+  if (old && Number(match.version) !== Number(old.version)) throw new Error('ข้อมูลนี้ถูกแก้ไขโดยกรรมการคนอื่นแล้ว');
+  match.version = (old ? Number(old.version) : 0) + 1;
+  match.updatedAt = new Date().toISOString();
+  const row = matchToRow_(match);
+  if (rowIndex > 0) sheet.getRange(rowIndex + 1, 1, 1, HEADERS.length).setValues([row]);
+  else sheet.appendRow(row);
+  return match;
+}
+
+function getSheet_() { return SpreadsheetApp.openById(CONFIG.SHEET_ID).getSheetByName(CONFIG.SHEET_NAME) || SpreadsheetApp.openById(CONFIG.SHEET_ID).insertSheet(CONFIG.SHEET_NAME); }
+function checkKey_(key) { if (CONFIG.API_KEY && key !== CONFIG.API_KEY) throw new Error('API key ไม่ถูกต้อง'); }
+function rowToMatch_(r) { return { id:r[0], dateISO:r[1], scheduledTime:r[2], court:r[3], eventType:r[4], status:r[5], winner:r[6] || null, teamA:JSON.parse(r[7]), teamB:JSON.parse(r[8]), sets:JSON.parse(r[9]), totalA:Number(r[10]||0), totalB:Number(r[11]||0), setWinsA:Number(r[12]||0), setWinsB:Number(r[13]||0), updatedAt:r[14], updatedBy:r[15], version:Number(r[16]||1), auditLog:JSON.parse(r[17] || '[]') }; }
+function matchToRow_(m) { return [m.id,m.dateISO,m.scheduledTime,m.court,m.eventType,m.status,m.winner||'',JSON.stringify(m.teamA),JSON.stringify(m.teamB),JSON.stringify(m.sets),m.totalA||0,m.totalB||0,m.setWinsA||0,m.setWinsB||0,m.updatedAt||'',m.updatedBy||'',m.version||1,JSON.stringify(m.auditLog||[])]; }
+function json_(data) { return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON); }

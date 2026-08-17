@@ -1,0 +1,1088 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Freshy Badminton 2026 - Scoreboard</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- Google Fonts: Prompt -->
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Firebase SDK (Modular) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getDatabase, ref, onValue, set, get, child, update, runTransaction, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+        // Expose to global scope for vanilla JS to use
+        window.firebaseModules = { initializeApp, getDatabase, ref, onValue, set, get, child, update, runTransaction, serverTimestamp };
+    </script>
+
+    <style>
+        body { 
+            font-family: 'Prompt', sans-serif; 
+            background-color: #f8fafc; /* slate-50 */
+            -webkit-tap-highlight-color: transparent;
+        }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        /* Custom Animations */
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes slideDown { from { transform: translate(-50%, -20px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+        @keyframes scaleIn { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        
+        .animate-fade-in { animation: fadeIn 0.2s ease-out; }
+        .animate-slide-up { animation: slideUp 0.3s ease-out; }
+        .animate-toast { animation: slideDown 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+        .animate-modal { animation: scaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
+
+        /* Remove arrows from number inputs */
+        input[type="number"]::-webkit-inner-spin-button, 
+        input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        input[type="number"] { -moz-appearance: textfield; }
+        
+        .glass { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(8px); }
+    </style>
+</head>
+<body class="text-slate-800 antialiased h-screen flex flex-col overflow-hidden">
+
+    <!-- Main Application Container -->
+    <div id="app" class="h-full flex flex-col w-full max-w-5xl mx-auto bg-white shadow-2xl relative">
+        <!-- Content will be rendered here -->
+    </div>
+
+    <script>
+        // ==========================================
+        // 1. CONFIGURATION & CONSTANTS
+        // ==========================================
+        
+        // URL ของ Google Apps Script Web App (ลงท้ายด้วย /exec)
+        // ถ้ายังว่าง ระบบจะใช้ข้อมูลจำลองในเครื่องเหมือนเดิม
+        const SHEETS_API_URL = "https://script.google.com/macros/s/AKfycby34yk1zgkswsSLL1iHgxGjbuboeaaTUw2MTgIOaIG5T8odNxTB7xGQqnJKXcgtljF4/exec";
+        const SHEETS_API_KEY = "";
+
+        // ⚠️ โหมดเก่า Firebase: ใช้เป็น fallback เท่านั้น
+        // ถ้าค่าเป็น "YOUR_..." ระบบจะทำงานใน "โหมดสาธิต (Demo Mode)" อัตโนมัติ
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY",
+            authDomain: "YOUR_AUTH_DOMAIN",
+            databaseURL: "YOUR_DATABASE_URL",
+            projectId: "YOUR_PROJECT_ID",
+            storageBucket: "YOUR_STORAGE_BUCKET",
+            messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+            appId: "YOUR_APP_ID"
+        };
+
+        const JUDGE_PIN = "1234"; // PIN สำหรับกรรมการ
+        const IS_SHEETS_MODE = Boolean(SHEETS_API_URL);
+        const IS_DEMO_MODE = !IS_SHEETS_MODE && (!firebaseConfig.apiKey || firebaseConfig.apiKey.includes("YOUR_"));
+
+        const DEPARTMENTS = [
+            { id: 'd1', name: 'สาขาการแพทย์แผนไทย', shortName: 'แพทย์แผนไทย', color: 'bg-emerald-500' },
+            { id: 'd2', name: 'สาขารังสีเทคนิค', shortName: 'รังสีเทคนิค', color: 'bg-blue-500' },
+            { id: 'd3', name: 'สาขา วท.บ.เวชระเบียน + ปวส.เวชระเบียน', shortName: 'เวชระเบียน', color: 'bg-purple-500' },
+            { id: 'd4', name: 'สาขานวัตกรรมสื่อสาร + ฉุกเฉินการแพทย์', shortName: 'นวัตกรรม+ฉุกเฉิน', color: 'bg-rose-500' }
+        ];
+
+        const EVENT_TYPES = {
+            'MD': 'ชายคู่',
+            'WD': 'หญิงคู่',
+            'XD': 'คู่ผสม'
+        };
+
+        const STATUSES = {
+            'scheduled': { id: 'scheduled', label: 'รอแข่ง', badgeClass: 'bg-slate-100 text-slate-600 border border-slate-200' },
+            'live': { id: 'live', label: 'กำลังแข่ง', badgeClass: 'bg-blue-100 text-blue-700 border border-blue-200 animate-pulse' },
+            'finished': { id: 'finished', label: 'จบแล้ว', badgeClass: 'bg-green-100 text-green-700 border border-green-200' },
+            'walkover': { id: 'walkover', label: 'สละสิทธิ์', badgeClass: 'bg-orange-100 text-orange-700 border border-orange-200' },
+            'needs_review': { id: 'needs_review', label: 'รอตรวจสอบ', badgeClass: 'bg-red-100 text-red-700 border border-red-200' }
+        };
+
+        // ==========================================
+        // 2. STATE MANAGEMENT
+        // ==========================================
+        let state = {
+            matches: [],
+            currentTab: 'dashboard', // dashboard, schedule, setup
+            isJudge: false,
+            judgeName: '',
+            filterEvent: 'all',
+            filterStatus: 'all',
+            toast: null,
+            modals: {
+                judgeLogin: false,
+                scoreEntry: null // match ID
+            },
+            editingMatch: null, // Temporary match data during edit
+            isSaving: false
+        };
+
+        let broadcastChannel = null;
+        let dbRef = null;
+
+        // ==========================================
+        // 3. CORE LOGIC & SCORING RULES
+        // ==========================================
+        
+        function getDept(id) { return DEPARTMENTS.find(d => d.id === id) || DEPARTMENTS[0]; }
+
+        function calculateMatchResult(match) {
+            // คำนวณคะแนนรวมดิบ
+            match.totalA = match.sets.set1.scoreA + match.sets.set2.scoreA;
+            match.totalB = match.sets.set1.scoreB + match.sets.set2.scoreB;
+
+            // คำนวณจำนวนเซตที่ชนะ
+            match.setWinsA = (match.sets.set1.scoreA > match.sets.set1.scoreB ? 1 : 0) + 
+                             (match.sets.set2.scoreA > match.sets.set2.scoreB ? 1 : 0);
+            match.setWinsB = (match.sets.set1.scoreB > match.sets.set1.scoreA ? 1 : 0) + 
+                             (match.sets.set2.scoreB > match.sets.set2.scoreA ? 1 : 0);
+
+            // ตัดสินผู้ชนะ (เฉพาะเมื่อสถานะเป็น จบแล้ว หรือ รอตรวจสอบ)
+            if (match.status === 'finished' || match.status === 'needs_review') {
+                if (match.totalA > match.totalB) {
+                    match.winner = 'A';
+                    match.status = 'finished';
+                } else if (match.totalB > match.totalA) {
+                    match.winner = 'B';
+                    match.status = 'finished';
+                } else {
+                    // คะแนนรวมเท่ากัน ต้องรอกรรมการยืนยัน
+                    if (match.status !== 'needs_review' || !match.winner) {
+                        match.winner = 'TIE_PENDING';
+                        match.status = 'needs_review';
+                    }
+                }
+            } else if (match.status !== 'walkover') {
+                match.winner = null; // scheduled หรือ live
+            }
+            
+            return match;
+        }
+
+        function validateCompletedMatch(match) {
+            if (match.status === 'walkover' || match.status === 'scheduled' || match.status === 'live') {
+                return { valid: true };
+            }
+
+            const checkSet = (score1, score2) => {
+                // กติกา: ต้องมีคนได้ 21 และอีกคนต้องอยู่ระหว่าง 0-20 (ไม่มีดิวซ์)
+                if ((score1 === 21 && score2 >= 0 && score2 <= 20) || 
+                    (score2 === 21 && score1 >= 0 && score1 <= 20)) {
+                    return true;
+                }
+                return false;
+            };
+
+            const s1Valid = checkSet(match.sets.set1.scoreA, match.sets.set1.scoreB);
+            const s2Valid = checkSet(match.sets.set2.scoreA, match.sets.set2.scoreB);
+
+            if (!s1Valid || !s2Valid) {
+                return { 
+                    valid: false, 
+                    msg: "คะแนนไม่ถูกต้อง: ตามกติกาแต่ละเซตต้องมีผู้ชนะ 21 แต้ม และฝ่ายแพ้ไม่เกิน 20 แต้ม (ไม่มีดิวซ์)" 
+                };
+            }
+            return { valid: true };
+        }
+
+        function calculateDepartmentRanking() {
+            let stats = {};
+            DEPARTMENTS.forEach(d => {
+                stats[d.id] = { ...d, totalRaw: 0, matchPlayed: 0, matchWins: 0, setDiff: 0, ptDiff: 0, setWins: 0, setLoss: 0, ptWon:0, ptLoss:0 };
+            });
+
+            state.matches.forEach(m => {
+                // กรองตามประเภทกีฬาหากมีการเลือก
+                if (state.filterEvent !== 'all' && m.eventType !== state.filterEvent) return;
+                
+                if (m.status === 'finished' || m.status === 'walkover') {
+                    const idA = m.teamA.departmentId;
+                    const idB = m.teamB.departmentId;
+
+                    stats[idA].matchPlayed++;
+                    stats[idB].matchPlayed++;
+
+                    // การคำนวณกรณีปกติ
+                    if (m.status === 'finished') {
+                        stats[idA].totalRaw += m.totalA;
+                        stats[idB].totalRaw += m.totalB;
+
+                        stats[idA].ptWon += m.totalA; stats[idA].ptLoss += m.totalB;
+                        stats[idB].ptWon += m.totalB; stats[idB].ptLoss += m.totalA;
+
+                        stats[idA].setWins += m.setWinsA; stats[idA].setLoss += m.setWinsB;
+                        stats[idB].setWins += m.setWinsB; stats[idB].setLoss += m.setWinsA;
+                    }
+
+                    // ชนะแมตช์ (รวม Walkover)
+                    if (m.winner === 'A') stats[idA].matchWins++;
+                    else if (m.winner === 'B') stats[idB].matchWins++;
+
+                    // สรุปผลต่าง
+                    stats[idA].setDiff = stats[idA].setWins - stats[idA].setLoss;
+                    stats[idB].setDiff = stats[idB].setWins - stats[idB].setLoss;
+                    stats[idA].ptDiff = stats[idA].ptWon - stats[idA].ptLoss;
+                    stats[idB].ptDiff = stats[idB].ptWon - stats[idB].ptLoss;
+                }
+            });
+
+            // เรียงลำดับ: Total Raw > Match Wins > Set Diff > Point Diff > ชื่อ
+            return Object.values(stats).sort((a, b) => {
+                if (b.totalRaw !== a.totalRaw) return b.totalRaw - a.totalRaw;
+                if (b.matchWins !== a.matchWins) return b.matchWins - a.matchWins;
+                if (b.setDiff !== a.setDiff) return b.setDiff - a.setDiff;
+                if (b.ptDiff !== a.ptDiff) return b.ptDiff - a.ptDiff;
+                return a.name.localeCompare(b.name);
+            });
+        }
+
+        // ==========================================
+        // 4. DATA SYNCHRONIZATION
+        // ==========================================
+
+        function generateSeedData() {
+            const types = Object.keys(EVENT_TYPES);
+            const data = [];
+            let idCounter = 1;
+            
+            // สร้างข้อมูลจำลอง วันที่ 19 ส.ค. 2026 ตั้งแต่ 17:00 - 21:00
+            for (let hour = 17; hour <= 20; hour++) {
+                for(let court = 1; court <= 2; court++) {
+                    const type = types[(idCounter-1) % 3];
+                    const d1 = DEPARTMENTS[idCounter % 4];
+                    const d2 = DEPARTMENTS[(idCounter+1) % 4];
+                    
+                    let status = hour < 19 ? 'finished' : (hour === 19 ? 'live' : 'scheduled');
+                    let s1A = 0, s1B = 0, s2A = 0, s2B = 0;
+
+                    if (status === 'finished') {
+                        s1A = 21; s1B = 15;
+                        s2A = 18; s2B = 21;
+                    } else if (status === 'live') {
+                        s1A = 21; s1B = 18;
+                        s2A = 10; s2B = 5;
+                    }
+                    
+                    data.push({
+                        id: `m${idCounter}`,
+                        dateISO: '2026-08-19',
+                        scheduledTime: `${hour}:00`,
+                        court: `สนาม ${court}`,
+                        eventType: type,
+                        teamA: { id: `tA${idCounter}`, name: `ทีม ${d1.shortName}`, departmentId: d1.id },
+                        teamB: { id: `tB${idCounter}`, name: `ทีม ${d2.shortName}`, departmentId: d2.id },
+                        status: status,
+                        sets: {
+                            set1: { scoreA: s1A, scoreB: s1B },
+                            set2: { scoreA: s2A, scoreB: s2B }
+                        },
+                        totalA: 0, totalB: 0, setWinsA: 0, setWinsB: 0, winner: null,
+                        updatedAt: Date.now(),
+                        updatedBy: 'System',
+                        version: 1,
+                        auditLog: []
+                    });
+                    idCounter++;
+                }
+            }
+            return data.map(calculateMatchResult);
+        }
+
+        function initApp() {
+            // Restore session
+            const savedJudge = localStorage.getItem('judgeName');
+            if (savedJudge) {
+                state.isJudge = true;
+                state.judgeName = savedJudge;
+            }
+
+            if (IS_SHEETS_MODE) {
+                console.log("🔵 Connecting to Google Sheets");
+                loadFromSheets();
+            } else if (IS_DEMO_MODE) {
+                console.log("🟢 Running in Demo Mode (Local Storage + BroadcastChannel)");
+                // Setup Broadcast Channel for cross-tab sync in Demo Mode
+                if ('BroadcastChannel' in window) {
+                    broadcastChannel = new BroadcastChannel('badminton_sync_channel');
+                    broadcastChannel.onmessage = (e) => {
+                        if (e.data && e.data.type === 'SYNC_DATA') {
+                            state.matches = e.data.payload;
+                            render();
+                        }
+                    };
+                }
+
+                const localData = localStorage.getItem('badminton_matches');
+                if (localData) {
+                    state.matches = JSON.parse(localData);
+                } else {
+                    state.matches = generateSeedData();
+                    localStorage.setItem('badminton_matches', JSON.stringify(state.matches));
+                }
+                render();
+            } else {
+                console.log("🔵 Attempting to connect to Firebase Realtime Database");
+                // Wait for Firebase modules to load via CDN
+                const checkInterval = setInterval(() => {
+                    if (window.firebaseModules && window.firebaseModules.initializeApp) {
+                        clearInterval(checkInterval);
+                        setupFirebase();
+                    }
+                }, 100);
+            }
+        }
+
+        async function loadFromSheets() {
+            try {
+                const response = await fetch(`${SHEETS_API_URL}?action=list&key=${encodeURIComponent(SHEETS_API_KEY)}`);
+                const result = await response.json();
+                if (!result.ok) throw new Error(result.error || 'โหลดข้อมูลไม่สำเร็จ');
+                state.matches = result.matches || [];
+                render();
+            } catch (error) {
+                console.error(error);
+                showToast('เชื่อมต่อ Google Sheets ไม่สำเร็จ จึงใช้ข้อมูลจำลองชั่วคราว', true);
+                state.matches = generateSeedData();
+                render();
+            }
+        }
+
+        function setupFirebase() {
+            try {
+                const app = window.firebaseModules.initializeApp(firebaseConfig);
+                const db = window.firebaseModules.getDatabase(app);
+                const matchesRef = window.firebaseModules.ref(db, 'matches');
+                
+                // Realtime Listener
+                window.firebaseModules.onValue(matchesRef, (snapshot) => {
+                    const data = snapshot.val();
+                    if (data) {
+                        state.matches = Object.values(data);
+                    } else {
+                        // Seed database if empty
+                        const seedData = generateSeedData();
+                        const dataObj = {};
+                        seedData.forEach(m => dataObj[m.id] = m);
+                        window.firebaseModules.set(matchesRef, dataObj);
+                    }
+                    render();
+                });
+            } catch (error) {
+                console.error("Firebase setup failed:", error);
+                showToast("การเชื่อมต่อฐานข้อมูลล้มเหลว กลับสู่โหมดสาธิต", true);
+            }
+        }
+
+        async function updateMatchData(updatedMatch, auditNote = '') {
+            state.isSaving = true;
+            render();
+
+            // Prepare audit log
+            const logEntry = {
+                timestamp: Date.now(),
+                judgeName: state.judgeName,
+                action: `Updated status to ${updatedMatch.status}`,
+                note: auditNote || ''
+            };
+            if (!updatedMatch.auditLog) updatedMatch.auditLog = [];
+            updatedMatch.auditLog.unshift(logEntry); // Add to beginning
+            
+            // Keep only last 10 logs
+            if (updatedMatch.auditLog.length > 10) updatedMatch.auditLog.pop();
+
+            updatedMatch.updatedAt = Date.now();
+            updatedMatch.updatedBy = state.judgeName;
+            
+            if (IS_SHEETS_MODE) {
+                try {
+                    const response = await fetch(SHEETS_API_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify({ action: 'save', key: SHEETS_API_KEY, match: updatedMatch })
+                    });
+                    const result = await response.json();
+                    if (!result.ok) throw new Error(result.error || 'บันทึกไม่สำเร็จ');
+                    const index = state.matches.findIndex(m => m.id === updatedMatch.id);
+                    if (index >= 0) state.matches[index] = result.match || updatedMatch;
+                    showToast('บันทึกผลลง Google Sheets สำเร็จ!');
+                } catch (err) {
+                    console.error(err);
+                    showToast('บันทึกลง Google Sheets ไม่สำเร็จ', true);
+                }
+            } else if (IS_DEMO_MODE) {
+                // Simulate Concurrency Check in Demo Mode
+                const index = state.matches.findIndex(m => m.id === updatedMatch.id);
+                if (index !== -1) {
+                    const currentVersion = state.matches[index].version || 1;
+                    if (updatedMatch.version !== currentVersion) {
+                        showToast("เกิดข้อผิดพลาด: ข้อมูลถูกอัปเดตโดยกรรมการคนอื่น กรุณาตรวจสอบอีกครั้ง", true);
+                        state.isSaving = false;
+                        render();
+                        return;
+                    }
+                    updatedMatch.version = currentVersion + 1;
+                    state.matches[index] = updatedMatch;
+                    localStorage.setItem('badminton_matches', JSON.stringify(state.matches));
+                    if (broadcastChannel) broadcastChannel.postMessage({ type: 'SYNC_DATA', payload: state.matches });
+                    showToast("บันทึกผลสำเร็จ!");
+                }
+            } else {
+                // Firebase Transaction for concurrency control
+                try {
+                    const db = window.firebaseModules.getDatabase();
+                    const matchRef = window.firebaseModules.ref(db, `matches/${updatedMatch.id}`);
+                    
+                    const result = await window.firebaseModules.runTransaction(matchRef, (currentData) => {
+                        if (currentData === null) return updatedMatch; // Not exists yet
+                        if (currentData.version !== updatedMatch.version) {
+                            return; // Abort transaction if version mismatch
+                        }
+                        updatedMatch.version = currentData.version + 1;
+                        updatedMatch.updatedAt = window.firebaseModules.serverTimestamp(); // Use server time
+                        return updatedMatch;
+                    });
+
+                    if (result.committed) {
+                        showToast("บันทึกผลสำเร็จผ่านเซิร์ฟเวอร์!");
+                    } else {
+                        showToast("ข้อมูลถูกอัปเดตโดยกรรมการคนอื่น กรุณาตรวจสอบข้อมูลล่าสุด", true);
+                    }
+                } catch (err) {
+                    showToast("เกิดข้อผิดพลาดในการบันทึก", true);
+                    console.error(err);
+                }
+            }
+
+            state.isSaving = false;
+            closeModals();
+        }
+
+        // ==========================================
+        // 5. EVENT DELEGATION
+        // ==========================================
+
+        document.addEventListener('click', (e) => {
+            const target = e.target.closest('[data-action]');
+            if (!target) return;
+            
+            const action = target.getAttribute('data-action');
+            const payload = target.getAttribute('data-payload');
+
+            switch (action) {
+                case 'switch-tab':
+                    state.currentTab = payload;
+                    render();
+                    break;
+                case 'filter-event':
+                    state.filterEvent = payload;
+                    render();
+                    break;
+                case 'open-login':
+                    state.modals.judgeLogin = true;
+                    render();
+                    break;
+                case 'logout':
+                    state.isJudge = false;
+                    state.judgeName = '';
+                    localStorage.removeItem('judgeName');
+                    showToast("ออกจากระบบแล้ว");
+                    render();
+                    break;
+                case 'close-modals':
+                    closeModals();
+                    break;
+                case 'open-score-modal':
+                    if (!state.isJudge) {
+                        showToast("กรุณาเข้าสู่ระบบกรรมการก่อน", true);
+                        return;
+                    }
+                    const matchToEdit = state.matches.find(m => m.id === payload);
+                    if (matchToEdit) {
+                        state.modals.scoreEntry = payload;
+                        // Deep copy for temporary editing
+                        state.editingMatch = JSON.parse(JSON.stringify(matchToEdit));
+                        render();
+                    }
+                    break;
+                case 'save-score':
+                    handleSaveScore();
+                    break;
+                case 'reset-demo':
+                    if (confirm("ยืนยันการล้างข้อมูลทั้งหมด? (ข้อมูลจะกลับเป็นค่าเริ่มต้น)")) {
+                        state.matches = generateSeedData();
+                        localStorage.setItem('badminton_matches', JSON.stringify(state.matches));
+                        if (broadcastChannel) broadcastChannel.postMessage({ type: 'SYNC_DATA', payload: state.matches });
+                        showToast("รีเซ็ตข้อมูลเรียบร้อยแล้ว");
+                        render();
+                    }
+                    break;
+            }
+        });
+
+        // Handle dynamic inputs in Score Modal
+        document.addEventListener('input', (e) => {
+            if (!state.editingMatch) return;
+            
+            const id = e.target.id;
+            const val = e.target.value;
+
+            if (id === 'edit-status') {
+                state.editingMatch.status = val;
+                render(); // Re-render to show/hide fields (e.g. walkover winner select)
+            }
+        });
+
+        function closeModals() {
+            state.modals.judgeLogin = false;
+            state.modals.scoreEntry = null;
+            state.editingMatch = null;
+            render();
+        }
+
+        function handleJudgeLogin(e) {
+            e.preventDefault();
+            const name = document.getElementById('login-name').value.trim();
+            const pin = document.getElementById('login-pin').value.trim();
+
+            if (name && pin === JUDGE_PIN) {
+                state.isJudge = true;
+                state.judgeName = name;
+                localStorage.setItem('judgeName', name);
+                showToast(`เข้าสู่ระบบสำเร็จ: ${name}`);
+                closeModals();
+            } else {
+                showToast("PIN ไม่ถูกต้อง", true);
+            }
+        }
+
+        function handleSaveScore() {
+            if (state.isSaving) return;
+            
+            const m = state.editingMatch;
+            
+            // 1. Gather scores from DOM
+            m.sets.set1.scoreA = parseInt(document.getElementById('s1a').value) || 0;
+            m.sets.set1.scoreB = parseInt(document.getElementById('s1b').value) || 0;
+            m.sets.set2.scoreA = parseInt(document.getElementById('s2a').value) || 0;
+            m.sets.set2.scoreB = parseInt(document.getElementById('s2b').value) || 0;
+            
+            // 2. Walkover / Tie Handling
+            const auditNoteInput = document.getElementById('audit-note');
+            let auditNote = auditNoteInput ? auditNoteInput.value : '';
+
+            if (m.status === 'walkover') {
+                m.winner = document.getElementById('walkover-winner').value;
+            } else if (m.status === 'needs_review') {
+                const tieWinner = document.getElementById('tie-winner');
+                if (tieWinner && tieWinner.value !== 'TIE_PENDING') {
+                    m.winner = tieWinner.value;
+                    m.status = 'finished'; // Resolve tie manually
+                    if (!auditNote) auditNote = "กรรมการยืนยันผู้ชนะจากผลเสมอ";
+                }
+            }
+
+            // 3. Recalculate Logic
+            calculateMatchResult(m);
+
+            // 4. Validate
+            const validation = validateCompletedMatch(m);
+            if (!validation.valid) {
+                showToast(validation.msg, true);
+                return;
+            }
+
+            // 5. Save
+            updateMatchData(m, auditNote);
+        }
+
+        function showToast(msg, isError = false) {
+            state.toast = { msg, isError };
+            render();
+            setTimeout(() => {
+                state.toast = null;
+                render();
+            }, 3000);
+        }
+
+        // ==========================================
+        // 6. VIEW RENDERING
+        // ==========================================
+
+        function render() {
+            const app = document.getElementById('app');
+            app.innerHTML = `
+                ${renderHeader()}
+                <div class="flex-1 flex flex-col overflow-hidden relative">
+                    ${renderTabs()}
+                    <main class="flex-1 overflow-y-auto hide-scrollbar p-3 md:p-6 pb-24">
+                        ${state.currentTab === 'dashboard' ? renderDashboard() : ''}
+                        ${state.currentTab === 'schedule' ? renderSchedule() : ''}
+                        ${state.currentTab === 'setup' ? renderSetup() : ''}
+                    </main>
+                </div>
+                ${renderModals()}
+                ${renderToast()}
+                ${renderFloatingActionButton()}
+            `;
+            lucide.createIcons();
+        }
+
+        function renderHeader() {
+            const badgeColor = IS_DEMO_MODE ? 'bg-orange-500' : 'bg-emerald-500';
+            const badgeText = IS_DEMO_MODE ? 'โหมดสาธิต: ข้อมูลยังไม่ซิงก์ข้ามเครื่อง' : 'ออนไลน์: ข้อมูลอัปเดตเรียลไทม์';
+
+            const userSection = state.isJudge ? `
+                <div class="flex items-center gap-3">
+                    <div class="text-right hidden sm:block">
+                        <p class="text-sm font-bold text-slate-800">กรรมการ ${state.judgeName}</p>
+                        <p class="text-xs text-emerald-600 font-medium">พร้อมบันทึกผล</p>
+                    </div>
+                    <button data-action="logout" class="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center hover:bg-slate-200 transition-colors text-slate-600">
+                        <i data-lucide="log-out" class="w-5 h-5"></i>
+                    </button>
+                </div>
+            ` : `
+                <button data-action="open-login" class="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-sm font-medium transition-colors shadow-sm">
+                    <i data-lucide="shield-check" class="w-4 h-4"></i>
+                    <span class="hidden sm:inline">เข้าสู่ระบบกรรมการ</span>
+                </button>
+            `;
+
+            return `
+                <div class="${badgeColor} text-white text-xs py-1.5 px-4 text-center font-medium shadow-sm flex items-center justify-center gap-2">
+                    <i data-lucide="${IS_DEMO_MODE ? 'wifi-off' : 'wifi'}" class="w-3.5 h-3.5"></i> ${badgeText}
+                </div>
+                <header class="bg-white border-b border-slate-200 px-4 py-3 flex justify-between items-center z-10 sticky top-0">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-inner text-white transform rotate-3">
+                            <i data-lucide="trophy" class="w-6 h-6"></i>
+                        </div>
+                        <div>
+                            <h1 class="font-bold text-lg text-slate-900 leading-tight">Freshy Badminton</h1>
+                            <p class="text-xs text-slate-500">ปีการศึกษา 2026</p>
+                        </div>
+                    </div>
+                    ${userSection}
+                </header>
+            `;
+        }
+
+        function renderTabs() {
+            const tabs = [
+                { id: 'dashboard', label: 'อันดับ & ผลรวม', icon: 'bar-chart-2' },
+                { id: 'schedule', label: 'ตารางแข่ง', icon: 'calendar-days' },
+                { id: 'setup', label: 'การตั้งค่า', icon: 'settings' }
+            ];
+
+            return `
+                <div class="flex bg-white border-b border-slate-200 overflow-x-auto hide-scrollbar sticky top-0 z-0 shadow-sm">
+                    ${tabs.map(t => `
+                        <button data-action="switch-tab" data-payload="${t.id}" 
+                            class="flex-1 py-3 px-4 min-w-[120px] flex items-center justify-center gap-2 text-sm font-medium border-b-2 transition-all
+                            ${state.currentTab === t.id ? 'border-indigo-600 text-indigo-700 bg-indigo-50/50' : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'}">
+                            <i data-lucide="${t.icon}" class="w-4 h-4"></i>
+                            ${t.label}
+                        </button>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        function renderDashboard() {
+            const ranking = calculateDepartmentRanking();
+            const events = [{id:'all', label:'รวมทุกประเภท'}, ...Object.keys(EVENT_TYPES).map(k=>({id:k, label:EVENT_TYPES[k]}))];
+            
+            const filterHtml = `
+                <div class="flex flex-wrap gap-2 mb-6">
+                    ${events.map(e => `
+                        <button data-action="filter-event" data-payload="${e.id}"
+                            class="px-4 py-1.5 rounded-full text-sm font-medium transition-all shadow-sm border
+                            ${state.filterEvent === e.id ? 'bg-indigo-600 text-white border-indigo-600 ring-2 ring-indigo-200 ring-offset-1' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}">
+                            ${e.label}
+                        </button>
+                    `).join('')}
+                </div>
+            `;
+
+            const rows = ranking.map((r, i) => `
+                <tr class="border-b border-slate-100 hover:bg-slate-50 transition-colors group">
+                    <td class="py-4 px-3 text-center">
+                        ${i === 0 ? `<div class="w-8 h-8 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center mx-auto font-bold"><i data-lucide="crown" class="w-4 h-4"></i></div>` 
+                                  : `<span class="text-slate-500 font-medium">${i+1}</span>`}
+                    </td>
+                    <td class="py-4 px-3">
+                        <div class="flex items-center gap-3">
+                            <div class="w-2 h-10 rounded-full ${r.color}"></div>
+                            <div>
+                                <p class="font-bold text-slate-800 text-sm md:text-base">${r.shortName}</p>
+                                <p class="text-[10px] md:text-xs text-slate-500 md:hidden">แข่ง ${r.matchPlayed} | ชนะ ${r.matchWins} | ต่างเซต ${r.setDiff>0?'+'+r.setDiff:r.setDiff}</p>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="py-4 px-3 text-center">
+                        <div class="inline-block bg-indigo-50 border border-indigo-100 text-indigo-700 px-3 py-1 rounded-lg text-lg font-black">
+                            ${r.totalRaw}
+                        </div>
+                    </td>
+                    <td class="py-4 px-3 text-center hidden md:table-cell text-slate-600 text-sm">${r.matchPlayed}</td>
+                    <td class="py-4 px-3 text-center hidden md:table-cell font-bold text-emerald-600">${r.matchWins}</td>
+                    <td class="py-4 px-3 text-center hidden lg:table-cell text-slate-600 text-sm">${r.setDiff > 0 ? '+'+r.setDiff : r.setDiff}</td>
+                    <td class="py-4 px-3 text-center hidden lg:table-cell text-slate-600 text-sm">${r.ptDiff > 0 ? '+'+r.ptDiff : r.ptDiff}</td>
+                </tr>
+            `).join('');
+
+            return `
+                <div class="max-w-4xl mx-auto animate-fade-in">
+                    <div class="mb-5 bg-blue-50/50 border border-blue-100 rounded-xl p-4 flex gap-3 text-sm text-blue-800">
+                        <i data-lucide="info" class="w-5 h-5 shrink-0 text-blue-500"></i>
+                        <div>
+                            <strong class="block mb-1">กติกาการจัดอันดับ:</strong>
+                            <ol class="list-decimal pl-4 space-y-1 text-slate-600">
+                                <li><strong>คะแนนรวมดิบ (Total Raw Points)</strong> จากทั้ง 2 เซต (แมตช์ปกติเล่น 2 เซต เซตละ 21 แต้ม ไม่มีดิวซ์)</li>
+                                <li>จำนวนแมตช์ที่ชนะ</li>
+                                <li>ผลต่างเซต และ ผลต่างคะแนน</li>
+                            </ol>
+                        </div>
+                    </div>
+                    ${filterHtml}
+                    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                        <div class="overflow-x-auto hide-scrollbar">
+                            <table class="w-full text-left border-collapse min-w-[500px]">
+                                <thead class="bg-slate-50 text-slate-500 uppercase text-xs font-semibold border-b border-slate-200">
+                                    <tr>
+                                        <th class="py-3 px-3 text-center w-16">อันดับ</th>
+                                        <th class="py-3 px-3">สาขา/ทีม</th>
+                                        <th class="py-3 px-3 text-center">คะแนนดิบรวม</th>
+                                        <th class="py-3 px-3 text-center hidden md:table-cell">แข่ง</th>
+                                        <th class="py-3 px-3 text-center hidden md:table-cell">ชนะแมตช์</th>
+                                        <th class="py-3 px-3 text-center hidden lg:table-cell">ต่างเซต</th>
+                                        <th class="py-3 px-3 text-center hidden lg:table-cell">ต่างแต้ม</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${rows}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderSchedule() {
+            if (state.matches.length === 0) {
+                return `<div class="flex flex-col items-center justify-center py-20 text-slate-400 animate-fade-in"><i data-lucide="inbox" class="w-16 h-16 mb-4 opacity-50"></i><p>ยังไม่มีข้อมูลการแข่งขัน</p></div>`;
+            }
+
+            // Sort by time
+            const sorted = [...state.matches].sort((a, b) => {
+                if(a.scheduledTime === b.scheduledTime) return a.court.localeCompare(b.court);
+                return a.scheduledTime.localeCompare(b.scheduledTime);
+            });
+
+            let html = '<div class="max-w-4xl mx-auto space-y-4 animate-slide-up">';
+
+            sorted.forEach(m => {
+                const s = STATUSES[m.status] || STATUSES['scheduled'];
+                const dA = getDept(m.teamA.departmentId);
+                const dB = getDept(m.teamB.departmentId);
+                const isFinished = m.status === 'finished' || m.status === 'walkover';
+                const isLive = m.status === 'live';
+                
+                const winA = isFinished && m.winner === 'A';
+                const winB = isFinished && m.winner === 'B';
+
+                // Team Row Helper
+                const renderTeam = (teamObj, dept, isWinner, isLoser, scoreS1, scoreS2, total) => `
+                    <div class="flex items-center justify-between p-2 rounded-lg ${isWinner ? 'bg-green-50/50' : ''}">
+                        <div class="flex items-center gap-3">
+                            <div class="w-1.5 h-8 rounded-full ${dept.color} ${isLoser ? 'opacity-30' : ''}"></div>
+                            <span class="font-bold text-sm md:text-base ${isLoser ? 'text-slate-400' : 'text-slate-800'} flex items-center gap-1.5">
+                                ${dept.shortName} ${isWinner ? '<i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-500"></i>' : ''}
+                            </span>
+                        </div>
+                        <div class="flex gap-1 md:gap-2 text-base md:text-lg font-bold text-slate-700">
+                            <div class="w-7 md:w-9 text-center bg-slate-50 border border-slate-100 rounded ${m.status === 'scheduled' ? 'text-transparent' : ''}">${scoreS1}</div>
+                            <div class="w-7 md:w-9 text-center bg-slate-50 border border-slate-100 rounded ${m.status === 'scheduled' ? 'text-transparent' : ''}">${scoreS2}</div>
+                            <div class="w-9 md:w-12 text-center bg-indigo-50 border border-indigo-100 text-indigo-700 rounded ml-1 md:ml-3 ${m.status === 'scheduled' ? 'text-transparent' : ''}">${total}</div>
+                        </div>
+                    </div>
+                `;
+
+                html += `
+                    <div class="bg-white rounded-xl shadow-sm border ${isLive ? 'border-blue-300 ring-2 ring-blue-50' : 'border-slate-200'} p-3 md:p-4 relative overflow-hidden transition-all hover:shadow-md">
+                        <!-- Top Info Bar -->
+                        <div class="flex justify-between items-center mb-3 pb-2 border-b border-slate-100">
+                            <div class="flex items-center gap-2 text-xs font-semibold text-slate-500">
+                                <span class="flex items-center gap-1 bg-slate-100 px-2 py-1 rounded"><i data-lucide="clock" class="w-3.5 h-3.5"></i> ${m.scheduledTime}</span>
+                                <span class="bg-slate-100 px-2 py-1 rounded">${m.court}</span>
+                                <span class="text-indigo-600 bg-indigo-50 px-2 py-1 rounded">${EVENT_TYPES[m.eventType]}</span>
+                            </div>
+                            <span class="text-[10px] md:text-xs px-2.5 py-1 rounded-full font-bold uppercase tracking-wider ${s.badgeClass}">${s.label}</span>
+                        </div>
+
+                        <div class="flex flex-col md:flex-row gap-4">
+                            <!-- Score Area -->
+                            <div class="flex-1 space-y-1">
+                                <div class="flex justify-end pr-[4.5rem] md:pr-6 text-[10px] font-bold text-slate-400 mb-1 gap-2 md:gap-3">
+                                    <span class="w-7 md:w-9 text-center">เซต 1</span>
+                                    <span class="w-7 md:w-9 text-center">เซต 2</span>
+                                    <span class="w-9 md:w-12 text-center text-indigo-400 ml-1 md:ml-3">รวมดิบ</span>
+                                </div>
+                                ${renderTeam(m.teamA, dA, winA, winB, m.sets.set1.scoreA, m.sets.set2.scoreA, m.totalA)}
+                                ${renderTeam(m.teamB, dB, winB, winA, m.sets.set1.scoreB, m.sets.set2.scoreB, m.totalB)}
+                            </div>
+
+                            <!-- Action Area -->
+                            ${state.isJudge ? `
+                                <div class="md:w-32 flex flex-col justify-center border-t md:border-t-0 md:border-l border-slate-100 pt-3 md:pt-0 md:pl-4 mt-2 md:mt-0">
+                                    <button data-action="open-score-modal" data-payload="${m.id}" 
+                                        class="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-white px-3 py-2.5 rounded-lg text-sm font-medium transition-colors shadow-sm active:scale-95">
+                                        <i data-lucide="pen-line" class="w-4 h-4"></i> บันทึกผล
+                                    </button>
+                                    ${m.updatedBy ? `<p class="text-[9px] text-slate-400 text-center mt-2">อัปเดตล่าสุด: ${m.updatedBy}</p>` : ''}
+                                </div>
+                            ` : ''}
+                        </div>
+
+                        <!-- Tie / Review Warning -->
+                        ${m.status === 'needs_review' ? `
+                            <div class="mt-3 bg-red-50 text-red-700 text-xs p-2.5 rounded-lg border border-red-100 flex gap-2">
+                                <i data-lucide="alert-triangle" class="w-4 h-4 shrink-0 mt-0.5"></i>
+                                <span>คะแนนรวมเสมอกัน รอกรรมการประเมินชี้ขาดหรือบันทึกหมายเหตุเพิ่มเติม</span>
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            });
+
+            html += '</div>';
+            return html;
+        }
+
+        function renderSetup() {
+            return `
+                <div class="max-w-2xl mx-auto space-y-6 animate-fade-in">
+                    <div class="bg-white p-5 md:p-6 rounded-2xl shadow-sm border border-slate-200">
+                        <h2 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                            <i data-lucide="settings" class="w-5 h-5 text-slate-500"></i> ข้อมูลระบบ
+                        </h2>
+                        
+                        <div class="space-y-4 text-sm text-slate-600">
+                            <div class="p-4 rounded-xl border ${IS_DEMO_MODE ? 'bg-orange-50 border-orange-200' : 'bg-emerald-50 border-emerald-200'}">
+                                <h3 class="font-bold text-slate-800 mb-1 flex items-center gap-2">
+                                    สถานะการเชื่อมต่อ: 
+                                    ${IS_DEMO_MODE ? '<span class="text-orange-600">โหมดสาธิต (Demo)</span>' : '<span class="text-emerald-600">เชื่อมต่อ Firebase สำเร็จ</span>'}
+                                </h3>
+                                <p class="mb-3 leading-relaxed">
+                                    ${IS_DEMO_MODE 
+                                        ? 'ระบบกำลังจำลองข้อมูลในเครื่องของคุณ (Local Storage) หากเปิดหลายแท็บในบราวเซอร์เดียวกัน ข้อมูลจะซิงก์หากันได้ หากต้องการใช้ระบบจริงข้ามอุปกรณ์ ต้องนำ Firebase Config มาใส่ในโค้ด' 
+                                        : 'ระบบกำลังเชื่อมต่อฐานข้อมูลแบบ Realtime กรรมการทุกคนจะเห็นข้อมูลตรงกันทันที'}
+                                </p>
+                                ${IS_DEMO_MODE ? `
+                                    <button data-action="reset-demo" class="px-4 py-2 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg font-medium transition-colors text-xs flex items-center gap-2 shadow-sm">
+                                        <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i> ล้างข้อมูลตัวอย่างและเริ่มใหม่
+                                    </button>
+                                ` : ''}
+                            </div>
+
+                            <div class="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                                <h3 class="font-bold text-slate-800 mb-2">สำหรับกรรมการ</h3>
+                                <ul class="list-disc pl-5 space-y-1 text-slate-600">
+                                    <li>รหัส PIN สำหรับเข้าสู่ระบบคือ <strong>1234</strong></li>
+                                    <li>การบันทึกผล แนะนำให้บันทึกเมื่อการแข่งขันแต่ละเซตจบลง</li>
+                                    <li>ระบบมีการป้องกันการเซฟทับกัน (Concurrency Control) หากมีกรรมการคนอื่นแก้ไขตัดหน้า ระบบจะแจ้งเตือน</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderFloatingActionButton() {
+            if (state.isJudge || state.currentTab !== 'schedule') return '';
+            return `
+                <button data-action="open-login" class="fixed bottom-6 right-6 md:hidden z-20 bg-slate-800 text-white p-4 rounded-full shadow-lg shadow-slate-400/50 flex items-center justify-center animate-slide-up">
+                    <i data-lucide="shield-check" class="w-6 h-6"></i>
+                </button>
+            `;
+        }
+
+        function renderModals() {
+            let html = '';
+
+            // Login Modal
+            if (state.modals.judgeLogin) {
+                html += `
+                    <div class="fixed inset-0 z-[60] flex items-center justify-center p-4 glass animate-fade-in">
+                        <div class="absolute inset-0 bg-slate-900/40" data-action="close-modals"></div>
+                        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm relative z-10 overflow-hidden animate-modal">
+                            <div class="bg-slate-800 px-5 py-4 flex justify-between items-center text-white">
+                                <h3 class="font-bold flex items-center gap-2"><i data-lucide="shield-check" class="w-5 h-5"></i> เข้าสู่ระบบกรรมการ</h3>
+                                <button data-action="close-modals" class="text-slate-400 hover:text-white transition-colors"><i data-lucide="x" class="w-5 h-5"></i></button>
+                            </div>
+                            <form onsubmit="handleJudgeLogin(event)" class="p-5 space-y-4">
+                                <div>
+                                    <label class="block text-sm font-bold text-slate-700 mb-1">ชื่อกรรมการ <span class="text-red-500">*</span></label>
+                                    <input type="text" id="login-name" required class="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow" placeholder="เช่น อาจารยเอก">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-bold text-slate-700 mb-1">รหัส PIN <span class="text-red-500">*</span></label>
+                                    <input type="password" id="login-pin" required class="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow" placeholder="พิมพ์ 1234">
+                                </div>
+                                <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition-colors mt-2 shadow-md">
+                                    เข้าสู่ระบบ
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Score Entry Modal
+            if (state.modals.scoreEntry && state.editingMatch) {
+                const m = state.editingMatch;
+                const dA = getDept(m.teamA.departmentId);
+                const dB = getDept(m.teamB.departmentId);
+                const isWalkover = m.status === 'walkover';
+                const isReview = m.status === 'needs_review';
+
+                html += `
+                    <div class="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4 glass animate-fade-in">
+                        <div class="absolute inset-0 bg-slate-900/50" data-action="close-modals"></div>
+                        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg relative z-10 flex flex-col max-h-[90vh] animate-modal">
+                            
+                            <!-- Header -->
+                            <div class="bg-slate-800 px-4 py-3 sm:px-5 sm:py-4 flex justify-between items-center text-white shrink-0 rounded-t-2xl">
+                                <div>
+                                    <h3 class="font-bold text-base md:text-lg flex items-center gap-2">
+                                        <i data-lucide="pen-line" class="w-5 h-5 text-indigo-400"></i> บันทึกผลคะแนน
+                                    </h3>
+                                    <p class="text-xs text-slate-300 mt-0.5">${EVENT_TYPES[m.eventType]} | ${m.court}</p>
+                                </div>
+                                <button data-action="close-modals" class="text-slate-400 hover:text-white p-1 bg-white/10 rounded-full transition-colors"><i data-lucide="x" class="w-5 h-5"></i></button>
+                            </div>
+
+                            <!-- Body -->
+                            <div class="p-4 sm:p-5 overflow-y-auto hide-scrollbar flex-1 space-y-5">
+                                
+                                <div>
+                                    <label class="block text-sm font-bold text-slate-700 mb-2">สถานะการแข่งขัน</label>
+                                    <select id="edit-status" class="w-full px-4 py-3 bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium text-slate-800 outline-none appearance-none shadow-sm cursor-pointer">
+                                        ${Object.values(STATUSES).map(s => `<option value="${s.id}" ${m.status === s.id ? 'selected' : ''}>${s.label}</option>`).join('')}
+                                    </select>
+                                </div>
+
+                                <!-- Score Inputs -->
+                                <div class="space-y-3 ${isWalkover ? 'opacity-40 pointer-events-none grayscale' : ''} transition-all">
+                                    <div class="flex items-center justify-between text-xs font-bold text-slate-400 px-2 uppercase tracking-wider">
+                                        <div class="w-1/3">ทีม</div>
+                                        <div class="w-1/3 text-center">เซต 1 (21)</div>
+                                        <div class="w-1/3 text-center">เซต 2 (21)</div>
+                                    </div>
+                                    
+                                    <!-- Team A -->
+                                    <div class="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-200">
+                                        <div class="w-1/3 pr-2 border-l-4 ${dA.color} pl-2 rounded-sm">
+                                            <p class="font-bold text-slate-800 text-sm leading-tight line-clamp-2">${dA.shortName}</p>
+                                        </div>
+                                        <div class="w-1/3 px-1.5">
+                                            <input type="number" id="s1a" value="${m.sets.set1.scoreA}" min="0" max="21" class="w-full text-center text-xl sm:text-2xl font-black text-slate-800 py-2 sm:py-3 border border-slate-300 rounded-xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-shadow block bg-white">
+                                        </div>
+                                        <div class="w-1/3 px-1.5">
+                                            <input type="number" id="s2a" value="${m.sets.set2.scoreA}" min="0" max="21" class="w-full text-center text-xl sm:text-2xl font-black text-slate-800 py-2 sm:py-3 border border-slate-300 rounded-xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-shadow block bg-white">
+                                        </div>
+                                    </div>
+
+                                    <!-- Team B -->
+                                    <div class="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-200">
+                                        <div class="w-1/3 pr-2 border-l-4 ${dB.color} pl-2 rounded-sm">
+                                            <p class="font-bold text-slate-800 text-sm leading-tight line-clamp-2">${dB.shortName}</p>
+                                        </div>
+                                        <div class="w-1/3 px-1.5">
+                                            <input type="number" id="s1b" value="${m.sets.set1.scoreB}" min="0" max="21" class="w-full text-center text-xl sm:text-2xl font-black text-slate-800 py-2 sm:py-3 border border-slate-300 rounded-xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-shadow block bg-white">
+                                        </div>
+                                        <div class="w-1/3 px-1.5">
+                                            <input type="number" id="s2b" value="${m.sets.set2.scoreB}" min="0" max="21" class="w-full text-center text-xl sm:text-2xl font-black text-slate-800 py-2 sm:py-3 border border-slate-300 rounded-xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-shadow block bg-white">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Walkover Config -->
+                                ${isWalkover ? `
+                                    <div class="bg-orange-50 border border-orange-200 p-4 rounded-xl animate-fade-in">
+                                        <label class="block text-sm font-bold text-orange-800 mb-2">เลือกว่าใครเป็นผู้ชนะจากการสละสิทธิ์</label>
+                                        <select id="walkover-winner" class="w-full px-4 py-2.5 bg-white border border-orange-300 rounded-lg text-sm font-medium outline-none">
+                                            <option value="A" ${m.winner === 'A' ? 'selected' : ''}>${dA.shortName} (ชนะ)</option>
+                                            <option value="B" ${m.winner === 'B' ? 'selected' : ''}>${dB.shortName} (ชนะ)</option>
+                                        </select>
+                                    </div>
+                                ` : ''}
+
+                                <!-- Tie Breaker Config -->
+                                ${isReview ? `
+                                    <div class="bg-red-50 border border-red-200 p-4 rounded-xl animate-fade-in">
+                                        <label class="block text-sm font-bold text-red-800 mb-2">ยืนยันผู้ชนะ (กรณีคะแนนดิบรวมเสมอ)</label>
+                                        <select id="tie-winner" class="w-full px-4 py-2.5 bg-white border border-red-300 rounded-lg text-sm font-medium outline-none mb-3">
+                                            <option value="TIE_PENDING">-- ยังไม่ตัดสิน --</option>
+                                            <option value="A">${dA.shortName} (ชนะจากการตัดสิน)</option>
+                                            <option value="B">${dB.shortName} (ชนะจากการตัดสิน)</option>
+                                        </select>
+                                        <input type="text" id="audit-note" placeholder="เหตุผลการตัดสิน (บันทึกลง Audit Log)" class="w-full px-3 py-2 text-sm border border-red-200 rounded-lg outline-none">
+                                    </div>
+                                ` : ''}
+
+                                <div class="bg-indigo-50/50 text-indigo-700 text-xs p-3 rounded-lg border border-indigo-100 flex items-start gap-2">
+                                    <i data-lucide="info" class="w-4 h-4 shrink-0 mt-0.5 text-indigo-500"></i>
+                                    <span>กติกา: แข่ง 2 เซต เซตละ 21 แต้ม <strong>ไม่มีดิวซ์</strong> ผู้ชนะแมตช์นับจากคะแนนดิบรวม (คลิก "จบแล้ว" เพื่อตรวจสอบความถูกต้อง)</span>
+                                </div>
+                            </div>
+
+                            <!-- Footer -->
+                            <div class="p-4 border-t border-slate-200 bg-slate-50 rounded-b-2xl flex gap-3 shrink-0">
+                                <button data-action="close-modals" class="flex-1 py-3.5 bg-white border border-slate-300 text-slate-700 font-bold rounded-xl hover:bg-slate-100 transition-colors">
+                                    ยกเลิก
+                                </button>
+                                <button data-action="save-score" class="flex-1 py-3.5 bg-slate-800 text-white font-bold rounded-xl hover:bg-slate-700 transition-colors shadow-lg shadow-slate-300 flex justify-center items-center gap-2 ${state.isSaving ? 'opacity-70 cursor-not-allowed' : ''}">
+                                    ${state.isSaving ? '<i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i> กำลังบันทึก...' : '<i data-lucide="save" class="w-5 h-5"></i> บันทึกข้อมูล'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            return html;
+        }
+
+        function renderToast() {
+            if (!state.toast) return '';
+            const bg = state.toast.isError ? 'bg-red-600' : 'bg-slate-800';
+            const icon = state.toast.isError ? 'alert-octagon' : 'check-circle';
+            return `
+                <div class="fixed top-6 left-1/2 transform -translate-x-1/2 z-[70] animate-toast w-max max-w-[90vw]">
+                    <div class="${bg} text-white px-5 py-3.5 rounded-2xl shadow-xl font-medium text-sm flex items-center gap-3">
+                        <i data-lucide="${icon}" class="w-5 h-5 shrink-0"></i> 
+                        <span class="leading-tight">${state.toast.msg}</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        // ==========================================
+        // 7. BOOTSTRAP
+        // ==========================================
+        window.onload = () => {
+            initApp();
+        };
+
+    </script>
+</body>
+</html>
