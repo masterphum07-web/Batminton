@@ -360,7 +360,10 @@
                 const response = await fetch(`${SHEETS_API_URL}?action=list&key=${encodeURIComponent(SHEETS_API_KEY)}`);
                 const result = await response.json();
                 if (!result.ok) throw new Error(result.error || 'โหลดข้อมูลไม่สำเร็จ');
-                state.matches = result.matches || [];
+                const incoming = result.matches || [];
+                const changed = JSON.stringify(incoming) !== JSON.stringify(state.matches);
+                if (!changed && !state.isLoading) return;
+                state.matches = incoming;
                 state.isLoading = false;
                 render();
                 if (!sheetsRefreshTimer) sheetsRefreshTimer = setInterval(() => { if (!state.modals.scoreEntry) loadFromSheets(); }, 10000);
@@ -427,7 +430,9 @@
                         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                         body: JSON.stringify({ action: 'save', key: SHEETS_API_KEY, match: updatedMatch })
                     });
-                    const result = await response.json();
+                    const responseText = await response.text();
+                    let result;
+                    try { result = JSON.parse(responseText); } catch (_) { throw new Error('Apps Script ส่งคำตอบไม่ใช่ JSON — ตรวจสอบ Deployment และสิทธิ์ Anyone'); }
                     if (!result.ok) throw new Error(result.error || 'บันทึกไม่สำเร็จ');
                     const index = state.matches.findIndex(m => m.id === updatedMatch.id);
                     if (index >= 0) state.matches[index] = result.match || updatedMatch;
@@ -435,7 +440,7 @@
                     setTimeout(() => loadFromSheets(), 250);
                 } catch (err) {
                     console.error(err);
-                    showToast('บันทึกลง Google Sheets ไม่สำเร็จ', true);
+                    showToast(`บันทึกไม่สำเร็จ: ${err.message}`, true);
                 }
             } else if (IS_DEMO_MODE) {
                 // Simulate Concurrency Check in Demo Mode

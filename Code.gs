@@ -27,7 +27,8 @@ function doPost(e) {
     checkKey_(body.key);
     if (body.action !== 'save' || !body.match || !body.match.id) throw new Error('ข้อมูลบันทึกไม่ครบ');
     const match = saveMatch_(body.match);
-    updateSummary_();
+    // การสรุปผลไม่ควรทำให้การบันทึกคะแนนล้มเหลว หากชีตสรุปมีเซลล์ merge
+    try { updateSummary_(); } catch (summaryError) { console.error(summaryError); }
     return json_({ ok: true, match: match });
   } catch (err) { return json_({ ok: false, error: err.message }); }
 }
