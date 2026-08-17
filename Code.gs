@@ -81,10 +81,15 @@ function updateSummary_() {
   const sheet = getSheetByName_(CONFIG.SUMMARY_SHEET);
   const matches = readMatches_().filter(m => m.status === 'finished' || m.status === 'walkover');
   const names = ['รังสีเทคนิค','แพทย์แผนไทย','นวัตกรรมและฉุกเฉินการแพทย์','วทบ.เวชและปวส.เวช'];
-  const stats = {}; names.forEach(n => stats[n] = {matches:0, points:0});
-  matches.forEach(m => { const a=m.teamA.name, b=m.teamB.name; if(stats[a]){stats[a].matches++;stats[a].points+=m.totalA||0;} if(stats[b]){stats[b].matches++;stats[b].points+=m.totalB||0;} });
+  const stats = {}; ['MD','WD','XD'].forEach(type => { stats[type]={}; names.forEach(n => stats[type][n]={matches:0,points:0}); });
+  matches.forEach(m => { const type=m.eventType||'MD', a=m.teamA.name, b=m.teamB.name; if(!stats[type]) return; if(stats[type][a]){stats[type][a].matches++;stats[type][a].points+=m.totalA||0;} if(stats[type][b]){stats[type][b].matches++;stats[type][b].points+=m.totalB||0;} });
   const rows = sheet.getDataRange().getDisplayValues();
-  rows.forEach((r,i) => { const n=String(r[0]||'').trim(); if(stats[n]) sheet.getRange(i+1,2,1,2).setValues([[stats[n].matches,stats[n].points]]); });
+  let currentType='MD';
+  rows.forEach((r,i) => {
+    const label=String(r[0]||'').trim();
+    if(label.includes('หญิง')) currentType='WD'; else if(label.includes('ผสม')) currentType='XD'; else if(label.includes('ชาย')) currentType='MD';
+    if(stats[currentType][label]) sheet.getRange(i+1,2,1,2).setValues([[stats[currentType][label].matches,stats[currentType][label].points]]);
+  });
 }
 function emptySets_() { return {set1:{scoreA:0,scoreB:0},set2:{scoreA:0,scoreB:0}}; }
 function team_(name) { const n=String(name||'').trim(); const map={'รังสีเทคนิค':'d2','แพทย์แผนไทย':'d1','นวัตกรรมและฉุกเฉินการแพทย์':'d4','นวัตกรรมสื่อสารและฉุกเฉินการแพทย์':'d4','วทบ.เวชและปวส.เวช':'d3','วทบ.เวชและปวส.เวชระเบียน':'d3'}; return {id:n,name:n,departmentId:map[n]||'d3'}; }
