@@ -49,6 +49,17 @@
         
         .glass { background: rgba(255, 255, 255, 0.92); backdrop-filter: blur(8px); }
         #app { border-radius: 0 0 1.5rem 1.5rem; overflow: hidden; }
+
+        /* Interactive polish: works with mouse and touch */
+        button, [data-action] { transition: transform .18s ease, box-shadow .18s ease, background-color .18s ease, border-color .18s ease; }
+        button:hover, [data-action]:hover { transform: translateY(-2px); }
+        button:active, [data-action]:active { transform: translateY(1px) scale(.98); }
+        button:focus-visible, [data-action]:focus-visible { outline: 3px solid rgba(99,102,241,.35); outline-offset: 3px; }
+        .bg-white.rounded-2xl { transition: transform .22s ease, box-shadow .22s ease, border-color .22s ease; }
+        .bg-white.rounded-2xl:hover { transform: translateY(-3px); box-shadow: 0 18px 36px rgba(15,23,42,.10); border-color: #c7d2fe; }
+        input, select { transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
+        input:focus, select:focus { transform: translateY(-1px); box-shadow: 0 0 0 4px rgba(99,102,241,.12); }
+        @media (hover: none) { button:active, [data-action]:active { transform: scale(.97); } .bg-white.rounded-2xl:hover { transform: none; } }
     </style>
 </head>
 <body class="text-slate-800 antialiased h-screen flex flex-col overflow-hidden">
