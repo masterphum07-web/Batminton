@@ -827,13 +827,20 @@
                 return `<div class="flex flex-col items-center justify-center py-20 text-slate-400 animate-fade-in"><i data-lucide="inbox" class="w-16 h-16 mb-4 opacity-50"></i><p>ยังไม่มีข้อมูลการแข่งขัน</p></div>`;
             }
 
+            const eventFilters = [{id:'all',label:'ทั้งหมด'}, ...Object.keys(EVENT_TYPES).map(id => ({id, label:EVENT_TYPES[id]}))];
+            const filterBar = `<div class="max-w-4xl mx-auto mb-5 flex flex-wrap items-center gap-2">
+                <span class="text-sm font-bold text-slate-500 mr-1"><i data-lucide="filter" class="w-4 h-4 inline-block mr-1"></i>ประเภท:</span>
+                ${eventFilters.map(f => `<button data-action="filter-event" data-payload="${f.id}" class="px-4 py-2 rounded-full border text-sm font-semibold transition-all ${state.filterEvent === f.id ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-200' : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300 hover:text-indigo-600'}">${f.label}</button>`).join('')}
+            </div>`;
+
             // Sort by time
-            const sorted = [...state.matches].sort((a, b) => {
+            const sorted = state.matches.filter(m => state.filterEvent === 'all' || m.eventType === state.filterEvent).sort((a, b) => {
                 if(a.scheduledTime === b.scheduledTime) return a.court.localeCompare(b.court);
                 return a.scheduledTime.localeCompare(b.scheduledTime);
             });
 
-            let html = '<div class="max-w-4xl mx-auto space-y-4 animate-slide-up">';
+            if (!sorted.length) return filterBar + `<div class="flex flex-col items-center justify-center py-20 text-slate-400"><i data-lucide="filter-x" class="w-14 h-14 mb-4 opacity-50"></i><p>ยังไม่มีการแข่งขันประเภทนี้</p></div>`;
+            let html = filterBar + '<div class="max-w-4xl mx-auto space-y-4 animate-slide-up">';
 
             sorted.forEach(m => {
                 const s = STATUSES[m.status] || STATUSES['scheduled'];
