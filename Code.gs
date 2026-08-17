@@ -45,31 +45,33 @@ function readMatches_() {
     const r = schedule[i];
     if (r[0] && !/^\d+$/.test(String(r[0]).trim())) eventType = String(r[0]).includes('ผสม') ? 'XD' : 'MD';
     if (!/^\d+$/.test(String(r[0]).trim())) continue;
-    const id = 'pair-' + String(r[0]).trim();
+    const court = r[6] || 'สนาม 1';
+    const id = court + '-คู่ที่-' + String(r[0]).trim();
     const saved = results[id] || {};
-    matches.push({ id:id, dateISO:normalizeDate_(r[1]), scheduledTime:String(r[5] || '').replace(' น.',''), court:r[6] || 'สนาม 1', eventType:eventType, status:saved.status || 'scheduled', winner:saved.winner || null, teamA:team_(r[2]), teamB:team_(r[4]), sets:saved.sets || emptySets_(), totalA:Number(saved.totalA||0), totalB:Number(saved.totalB||0), setWinsA:Number(saved.setWinsA||0), setWinsB:Number(saved.setWinsB||0), updatedAt:saved.updatedAt||'', updatedBy:saved.updatedBy||'', version:Number(saved.version||0), auditLog:saved.auditLog||[] });
+    matches.push({ id:id, dateISO:normalizeDate_(r[1]), scheduledTime:String(r[5] || '').replace(' น.',''), court:court, eventType:eventType, status:saved.status || 'scheduled', winner:saved.winner || null, teamA:team_(r[2]), teamB:team_(r[4]), sets:saved.sets || emptySets_(), totalA:Number(saved.totalA||0), totalB:Number(saved.totalB||0), setWinsA:Number(saved.setWinsA||0), setWinsB:Number(saved.setWinsB||0), updatedAt:saved.updatedAt||'', updatedBy:saved.updatedBy||'', version:Number(saved.version||0), auditLog:saved.auditLog||[] });
   }
   return matches;
 }
 
 function saveMatch_(match) {
-  setupSheet();
   const sheet = getResultsSheet_();
-  const rows = sheet.getDataRange().getValues();
-  const rowIndex = rows.findIndex((r, i) => i > 0 && String(r[0]) === String(match.id));
-  const old = rowIndex > 0 ? rowToMatch_(rows[rowIndex]) : null;
+  const rows = sheet.getDataRange().getDisplayValues();
+  const rowIndex = rows.findIndex((r, i) => i > 0 && matchId_(r[6], r[0]) === String(match.id));
+  const old = rowIndex > 0 ? readResult_(rows[rowIndex]) : null;
   if (old && Number(match.version) !== Number(old.version)) throw new Error('ข้อมูลนี้ถูกแก้ไขโดยกรรมการคนอื่นแล้ว');
   match.version = (old ? Number(old.version) : 0) + 1;
   match.updatedAt = new Date().toISOString();
-  const row = matchToRow_(match);
-  if (rowIndex > 0) sheet.getRange(rowIndex + 1, 1, 1, HEADERS.length).setValues([row]);
-  else sheet.appendRow(row);
+  if (rowIndex <= 0) throw new Error('หาแถวของแมตช์ในแท็บผลการแข่งขันไม่พบ');
+  sheet.getRange(rowIndex + 1, 8, 1, 2).setValues([[formatScore_(match), match.winner || '']]);
   return match;
 }
 
 function getSheetByName_(name) { return SpreadsheetApp.openById(CONFIG.SHEET_ID).getSheetByName(name) || SpreadsheetApp.openById(CONFIG.SHEET_ID).insertSheet(name); }
 function getResultsSheet_() { return getSheetByName_(CONFIG.RESULTS_SHEET); }
-function readResultRows_() { setupSheet(); const rows=getResultsSheet_().getDataRange().getValues(); const out={}; rows.slice(1).filter(r=>r[0]).forEach(r=>out[r[0]]=rowToMatch_(r)); return out; }
+function readResultRows_() { const rows=getResultsSheet_().getDataRange().getDisplayValues(); const out={}; rows.slice(1).forEach(r=>{ if (/^\d+$/.test(String(r[0]).trim())) out[matchId_(r[6],r[0])] = readResult_(r); }); return out; }
+function matchId_(court,pair) { return String(court||'สนาม 1').trim() + '-คู่ที่-' + String(pair||'').trim(); }
+function readResult_(r) { const score=String(r[7]||''); const nums=score.match(/\d+/g)||[]; const a1=Number(nums[0]||0), b1=Number(nums[1]||0), a2=Number(nums[2]||0), b2=Number(nums[3]||0); const sets={set1:{scoreA:a1,scoreB:b1},set2:{scoreA:a2,scoreB:b2}}; return {status:score?'finished':'scheduled',winner:r[8]||null,sets:sets,totalA:a1+a2,totalB:b1+b2,setWinsA:(a1>b1?1:0)+(a2>b2?1:0),setWinsB:(b1>a1?1:0)+(b2>a2?1:0),version:score?1:0,auditLog:[]}; }
+function formatScore_(m) { return [m.sets.set1.scoreA,m.sets.set1.scoreB,m.sets.set2.scoreA,m.sets.set2.scoreB].join('-'); }
 function emptySets_() { return {set1:{scoreA:0,scoreB:0},set2:{scoreA:0,scoreB:0}}; }
 function team_(name) { const n=String(name||'').trim(); const map={'รังสีเทคนิค':'d2','แพทย์แผนไทย':'d1','นวัตกรรมและฉุกเฉินการแพทย์':'d4','นวัตกรรมสื่อสารและฉุกเฉินการแพทย์':'d4','วทบ.เวชและปวส.เวช':'d3','วทบ.เวชและปวส.เวชระเบียน':'d3'}; return {id:n,name:n,departmentId:map[n]||'d3'}; }
 function normalizeDate_(value) { const s=String(value||''); if (/^\d{4}\/\d{1,2}\/\d{1,2}$/.test(s)) return s.replaceAll('/','-'); return s; }
